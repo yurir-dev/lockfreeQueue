@@ -1,5 +1,5 @@
 # lockfreeQueue
-C++ lock free queue 
+C++ thread safe lock free queue, implemented as ring buffer with several atomic indexes
 
  m2oQueue - many producers to one consumer.
  
