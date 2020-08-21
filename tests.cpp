@@ -16,6 +16,9 @@
 #include <queue>
 #include <atomic>
 
+#define SIZEOF_ARRAY(__arr__) (sizeof(__arr__) / sizeof(__arr__[0]))
+
+
 
 /*
 	Note do push to the tested queue,
@@ -26,8 +29,35 @@ struct Node
 {
 	Node(size_t n = 0)
 	{
-		for (size_t i = 0; i < sizeof(nums) / sizeof(nums[0]); ++i)
+		for (size_t i = 0; i < SIZEOF_ARRAY(nums) ; ++i)
 			nums[i] = n;
+	}
+	Node(const Node<N>& rHnd)
+	{
+		*this = rHnd;
+	}
+	Node(const Node<N>&& rHnd)
+	{
+		*this = std::move(rHnd);
+	}
+
+	Node& operator=(const Node<N>& rHnd)
+	{
+		if (this != &rHnd)
+		{
+			for (size_t i = 0; i < SIZEOF_ARRAY(nums); ++i)
+				nums[i] = rHnd.nums[i];
+		}
+		return *this;
+	}
+	Node& operator=(const Node<N>&& rHnd)
+	{
+		if (this != &rHnd)
+		{
+			for (size_t i = 0; i < SIZEOF_ARRAY(nums); ++i)
+				nums[i] = rHnd.nums[i];
+		}
+		return *this;
 	}
 
 	size_t val() const { return nums[0]; }
@@ -42,7 +72,8 @@ struct Node
 
 	size_t nums[N] = {0};
 };
-using testNode = Node<128>;
+using testNode = Node<12>;
+
 
 struct stats
 {
@@ -71,6 +102,65 @@ std::atomic<bool> endPush{ false };
 std::atomic<bool> endPop{ false };
 std::atomic<size_t> val2push{ 0 };
 const size_t threadNum = std::thread::hardware_concurrency();
+
+
+
+bool testInterface()
+{
+	std::cout << __FUNCTION__ << " Test : interfaces" << std::endl;
+	std::cout << "-------------------------------------------------" << std::endl;
+
+	bool res = true;
+	{
+		m2oQueue<testNode, 12, 0> q;
+		q.push(testNode(1)); //move
+
+		testNode n;
+		q.pop(n); // move
+
+		q.push(n); // copy
+
+		q.push(std::move(n)); // move
+
+		bool r = (n.val() == 1);
+		std::cout << __FUNCTION__ << " testNode: verdict: " << (r ? "OK" : "FAIL") << std::endl;
+
+		res = res & r;
+	}
+
+	{
+		m2oQueue<int, 12, 0> q;
+		q.push(1);
+
+		int n;
+		q.pop(n);
+
+		bool r = (n == 1);
+		std::cout << __FUNCTION__ << " int: verdict: " << (r ? "OK" : "FAIL") << std::endl;
+
+		res = res & r;
+	}
+
+	{
+		m2oQueue<std::string, 12, 0> q;
+		q.push("cucu");
+
+		std::string v;
+		q.pop(v);
+
+		bool r = (v == "cucu");
+		std::cout << __FUNCTION__ << " std::string: verdict: " << (r ? "OK" : "FAIL") << std::endl;
+
+		res = res & r;
+	}
+
+	std::cout << " ---- End ----" << std::endl << std::endl << std::endl;
+
+	return res;
+}
+
+
+
 
 template <class queue_t>
 static void pushFunc(stats& stats, queue_t &q)

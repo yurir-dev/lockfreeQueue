@@ -1,5 +1,7 @@
 #pragma once
 
+bool testInterface();
+
 bool testM2OQueue_ManyThreads_Pushes_1thread_Pops();
 bool testM2OQueue_1thread_Pops_ManyThreads_Pushes();
 
