@@ -1,10 +1,8 @@
 #pragma once
 
 #include <atomic>
-#include "spinlock_mutex.h"
-
 #include <iostream>
-#include <mutex>
+
 
 template <class T, size_t N, size_t ThreadNum>
 class queueBase
@@ -99,6 +97,33 @@ public:
 template <class T, size_t N, size_t ThreadNum>
 class m2mQueue : public queueBase<T, N, ThreadNum>
 {
+/*
+	taken from the book - C++ concurrency in action,
+	by Anthony Williams
+	section 7 Designing Lock-Free concurrent data structures, page 181
+*/
+	class spinlock_mutex
+	{
+	public:
+		spinlock_mutex() = default;
+		~spinlock_mutex()
+		{
+			unlock();
+		}
+
+		void lock()
+		{
+			while (m_flag.test_and_set(std::memory_order_acquire));
+		}
+		void unlock()
+		{
+			m_flag.clear(std::memory_order_release);
+		}
+
+	private:
+		std::atomic_flag m_flag{ ATOMIC_FLAG_INIT };
+	};
+
 public:
 	m2mQueue() = default;
 	~m2mQueue() = default;

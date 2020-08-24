@@ -6,7 +6,7 @@ set (EXE_NAME "lockFreeQueue")
 # set the project name
 project(${PROJECT_NAME})
 
-set (SOURCES main.cpp thsQueue.h spinlock_mutex.h tests.h tests.cpp stdQueueLock.h)
+set (SOURCES main.cpp thsQueue.h tests.h tests.cpp stdQueueLock.h)
 
 # specify the C++ standard
 set(CMAKE_CXX_STANDARD 11)
