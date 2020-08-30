@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <iostream>
 
 
 template <class T, size_t N, size_t ThreadNum>
