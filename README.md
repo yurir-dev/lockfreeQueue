@@ -10,7 +10,7 @@ Implementation details:
 
  - very simple, easy to understand implementation, written in modern C++ (at least C++11). check diagram.png for visualization of the algorithm.
 
- - it relies only on C++11 and include <atomic> so it’s multiplatform. 
+ - it relies only on C++11 and \#include \<atomic> so it’s multiplatform. 
 
  - all queue functionality is inside thsQueue.h.
 
