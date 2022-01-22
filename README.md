@@ -21,35 +21,34 @@ Implementation details:
 
 performance comparison between lockfreeQueue and std::queue with locks
 
-the test is pushs&pops from different threads for a specific amount of time.
+the test is pushs&pulls from different threads for a specific amount of time.
 
-each push/pop is counted and verified. 
+each push/pull is counted and verified. 
  
 the queues are limited in their size.
 
 
 
-many producer threads to one consumer thread:
+many producer threads to one consumer thread queue:
 
 test 1 - start pushing then start pulling. ratio 1:6.5
 
 test 2 - start pulling then start pushing. ratio 1:7.8
------
- std:		846035,		696620
+
+ std :		846035,		696620
 
  lockfree:	5456480,	5432678
 
----------------
+--------
 
-many producer threads to many consumer threads:
+many producer threads to many consumer threads queue:
 
-test 1 - start pushing then start poping. ratio 1:9.1
+test 1 - start pushing then start pulling. ratio 1:9.1
 
 test 2 - start pulling then start pushing. ratio 1:10.3
 
-test 1 - start pushing then start poping by a single consumer. ratio 1:6.9
+test 3 - start pushing then start pulling by a single consumer. ratio 1:6.9
 
-----
  std: 1888562, 1663961, 697529
 
  lockfree: 17231095, 17092099, 4821644
