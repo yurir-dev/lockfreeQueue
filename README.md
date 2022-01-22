@@ -12,6 +12,8 @@ Implementation details:
 
  - it relies only on C++11 and \#include \<atomic> so it’s multiplatform. 
 
- - all queue functionality is inside thsQueue.h.
+ - all queue functionality is inside lockFreeQueue.h.
+
+ - tests/benchmarks/examples are in tests/test*.cpp 
 
 
