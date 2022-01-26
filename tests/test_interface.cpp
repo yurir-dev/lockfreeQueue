@@ -5,7 +5,7 @@
 
 
 template<typename Q, typename T>
-bool testInterface(const T& origVal)
+bool testInterface(const T& origVal, const T& defaultVal)
 {
 	std::cout << __FUNCTION__ << " Test : interfaces " << typeid(T).name() << std::endl;
 	std::cout << "-------------------------------------------------" << std::endl;
@@ -15,13 +15,13 @@ bool testInterface(const T& origVal)
 		Q q;
 		q.push(T(origVal)); //move
 
-		T v;
+		T v{ defaultVal }; // compiler warns
 		q.pop(v); // move
 
 		q.push(v); // copy
 		q.push(std::move(v)); // move
 
-		T v2, v3;
+		T v2{ defaultVal }, v3{ defaultVal }; // compiler warns
 		q.pop(v2);
 		q.pop(v3);
 		if (v3 != v2 || v2 != origVal)
@@ -60,13 +60,13 @@ std::ostream& operator<<(std::ostream& s, const node& n)
 }
 
 
-int main(int argc, char* argv[])
+int main(int /*argc*/, char* /*argv*/[])
 {
-	if (!testInterface<concurency::m2oQueue<int, 12, 0>, int>(1))
+	if (!testInterface<concurency::m2oQueue<int, 12, 0>, int>(1, 42))
 		return __LINE__;
-	if (!testInterface<concurency::m2oQueue<std::string, 12, 0>, std::string>("1"))
+	if (!testInterface<concurency::m2oQueue<std::string, 12, 0>, std::string>("1", "42"))
 		return __LINE__;
-	if (!testInterface<concurency::m2oQueue<node, 12, 0>, node>(node("1")))
+	if (!testInterface<concurency::m2oQueue<node, 12, 0>, node>(node("1"), node("42")))
 		return __LINE__;
 	return 0;
 }
