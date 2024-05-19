@@ -1,2 +1,5 @@
 CMakeBuild
 build
+.vscode
+linuxBuild
+

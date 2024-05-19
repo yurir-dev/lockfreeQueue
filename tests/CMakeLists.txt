@@ -18,10 +18,14 @@ add_executable(${TEST_MANY2ONE} test_many2one.cpp ${COMMON_SOURCES})
 set(TEST_MANY2MANY test_many2many)
 add_executable(${TEST_MANY2MANY} test_many2many.cpp ${COMMON_SOURCES})
 
+set(TEST_ATOMICS test_atomics)
+add_executable(${TEST_ATOMICS} test_atomics.cpp ${COMMON_SOURCES})
 
-set(exes ${TEST_INTERFACE} ${TEST_MANY2ONE} ${TEST_MANY2MANY})
+
+set(exes ${TEST_INTERFACE} ${TEST_MANY2ONE} ${TEST_MANY2MANY} ${TEST_ATOMICS})
 
 if (UNIX)
+message("creating linux project")
 foreach (exe IN LISTS exes)
 	target_link_libraries(${exe} pthread)
 endforeach()
