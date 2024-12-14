@@ -17,10 +17,13 @@ else()
     endif()
 endif()
 
+add_compile_options("-std=c++17")
+add_compile_options("-std=gnu++17")
+
 set (SOURCES main.cpp lockfreeQueue.h)
 
 # specify the C++ standard
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # add the executable

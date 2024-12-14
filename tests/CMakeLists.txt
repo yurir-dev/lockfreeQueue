@@ -21,8 +21,10 @@ add_executable(${TEST_MANY2MANY} test_many2many.cpp ${COMMON_SOURCES})
 set(TEST_ATOMICS test_atomics)
 add_executable(${TEST_ATOMICS} test_atomics.cpp ${COMMON_SOURCES})
 
+set(TEST_QUEUEBUFFER test_queueBuffer)
+add_executable(${TEST_QUEUEBUFFER} test_queueBuffer.cpp ${COMMON_SOURCES})
 
-set(exes ${TEST_INTERFACE} ${TEST_MANY2ONE} ${TEST_MANY2MANY} ${TEST_ATOMICS})
+set(exes ${TEST_INTERFACE} ${TEST_MANY2ONE} ${TEST_MANY2MANY} ${TEST_ATOMICS} ${TEST_QUEUEBUFFER})
 
 if (UNIX)
 message("creating linux project")

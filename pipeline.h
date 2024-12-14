@@ -110,7 +110,7 @@ void pipeLine<Len, T>::start()
     int startFlag{waitFlag + 1};
     int endFlag{waitFlag + 2};
     _threads.emplace_back(dataProducerTask, waitFlag, startFlag, endFlag, *iterProducer);
-    waitFlag += endFlag;
+    waitFlag = endFlag;
 
 
     auto dataProcessorTask{[this](int waitFlag_, int startFlag_, int endFlag_, std::function<void(T&)> proc_){
@@ -126,7 +126,6 @@ void pipeLine<Len, T>::start()
 				expected = waitFlag_;
 				//std::this_thread::yield();
 
-                // not correct
 				exitLoop = this->_endProcessing.load(std::memory_order_acquire);
 				if(exitLoop) { break; }
 			}
@@ -139,21 +138,33 @@ void pipeLine<Len, T>::start()
 		}
 
 		// finish queue
-		while (true)
+        const auto endTP{std::chrono::steady_clock::now() + std::chrono::seconds{5}};
+		while (std::chrono::steady_clock::now() < endTP)
 		{
+            bool exitLoop{false};
 			auto& current{this->_ringBuffer[index++ % this->_ringBuffer.size()]};
 			auto expected{waitFlag_};
 			while(!current._flags.compare_exchange_strong(expected, startFlag_, std::memory_order_acq_rel))
 			{
 				if (expected == flagIdleVal())
 				{
+                    // all good, no more to process
 					return;
 				}
+
+                exitLoop = std::chrono::steady_clock::now() > endTP;
+                if (exitLoop) { break; }
+
 				expected = waitFlag_;
 			}
+
+            if (exitLoop) { break; }
+
 			proc_(current._data);
 			current._flags.store(endFlag_, std::memory_order_release);
 		}
+
+        std::cerr << "Failed to process some items, timed out" << std::endl;
 	}};
 
     _endProcessing.store(false, std::memory_order_release);
