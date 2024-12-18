@@ -88,7 +88,12 @@ class bufferQueue
 
         const auto* ptr{_buffer + _tail * BlockSize};
         const auto* headerPtr{reinterpret_cast<const header*>(ptr)};
-        assert(headerPtr->verifyMagic());
+        if (!headerPtr->verifyMagic())
+        {
+            assert(false && "corrupted data, failed to verify magic");
+            
+        }
+        
         ptr += sizeof(header);
 
         const auto [blocksAhead, blocksOverlap] = toReadBlocks(_head.load(), _tail.load(), _capacityBlocks);

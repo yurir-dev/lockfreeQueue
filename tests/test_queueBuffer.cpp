@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <chrono>
 #include <set>
 #include <vector>
@@ -116,8 +117,9 @@ bool testInterface()
         auto [ptr, len] = queue.front(data);
         std::cout << "pulled: " << std::string_view{ptr, len} << std::endl;
 
-        const std::string received{ptr, len};
-        const auto receivedSeqno{std::atoi(ptr)};
+        const std::string_view received{ptr, len};
+        size_t receivedSeqno{0};//{std::atoi(ptr)};
+        sscanf(ptr, "%zu", &receivedSeqno);
         makeData(receivedSeqno, expected);
         if (expected != received)
         {
@@ -187,11 +189,9 @@ bool testMultiThreadSPSC()
             {
                 auto [ptr, len] = queue.front(data);
 
-                const std::string received{ptr, len};
-                const auto receivedSeqno{std::atoi(ptr)};
-                
-                //std::cout << "pulled: seqno: " << receivedSeqno << ", len: " << len << std::endl;
-
+                const std::string_view received{ptr, len};
+                size_t receivedSeqno{0};
+                sscanf(ptr, "%zu", &receivedSeqno);
                 makeData(receivedSeqno, expected);
                 if (expected != received)
                 {
