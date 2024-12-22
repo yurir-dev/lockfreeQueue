@@ -14,6 +14,8 @@
 class bufferQueue
 {
     friend std::ostream& operator<< (std::ostream& stream, const bufferQueue& obj);
+    class bufferQueueSyncMPSC;
+    friend std::ostream& operator<< (std::ostream& stream, const bufferQueueSyncMPSC& obj);
 
     struct header
     {
@@ -45,14 +47,17 @@ class bufferQueue
 
     bool push(const char* ptrIn, size_t len)
     {
-        const auto [blocksAhead, blocksOverlap] = toWriteBlocks(_head.load(), _tail.load(), _capacityBlocks);
+        const auto headVal{_head.load(std::memory_order_relaxed)};
+        const auto tailVal{_tail.load(std::memory_order_acquire)};
+
+        const auto [blocksAhead, blocksOverlap] = toWriteBlocks(headVal, tailVal, _capacityBlocks);
         const auto blocksNeeded{numOfBlocks(len + sizeof(header))};
         if (blocksAhead + blocksOverlap < blocksNeeded)
         {
             return false;
         }
 
-        auto* ptr{_buffer + _head * BlockSize};
+        auto* ptr{_buffer + headVal * BlockSize};
         new (ptr) header{len};
         ptr += sizeof(header);
 
@@ -69,34 +74,31 @@ class bufferQueue
             std::memcpy(ptr, ptrIn + bufferAheadLen, bufferOverlapLen);
         }
 
-        const auto headVal{_head.load()};
-        _head = (headVal + blocksNeeded) % _capacityBlocks;
-#if 0
-        std::cout << "head: " << headVal << " -> " << _head
-                  << ", tail: " << _tail
-                  << ", blocks: " << _capacityBlocks
-                  << std::endl;
-#endif        
+        _head.store((headVal + blocksNeeded) % _capacityBlocks, std::memory_order_release);
+   
         return true;
     }
     std::pair<const char*, size_t> front(std::string& buffer)
     {
-        if (empty())
+        const auto headVal{_head.load(std::memory_order_relaxed)};
+        const auto tailVal{_tail.load(std::memory_order_acquire)};
+
+        if (empty(headVal, tailVal))
         {
             return {nullptr, 0};
         }
 
-        const auto* ptr{_buffer + _tail * BlockSize};
+        const auto* ptr{_buffer + tailVal * BlockSize};
         const auto* headerPtr{reinterpret_cast<const header*>(ptr)};
         if (!headerPtr->verifyMagic())
         {
             assert(false && "corrupted data, failed to verify magic");
-            
+
         }
         
         ptr += sizeof(header);
 
-        const auto [blocksAhead, blocksOverlap] = toReadBlocks(_head.load(), _tail.load(), _capacityBlocks);
+        const auto [blocksAhead, blocksOverlap] = toReadBlocks(headVal, tailVal, _capacityBlocks);
         if (headerPtr->_len + sizeof(header) <= blocksAhead * BlockSize)
         {
             return {ptr, headerPtr->_len};
@@ -108,7 +110,6 @@ class bufferQueue
         ptr = _buffer;
         const auto bufferOverlapLen{headerPtr->_len - bufferAheadLen};
         std::memcpy(buffer.data() + bufferAheadLen, ptr, bufferOverlapLen);
-        //std::cout << "front overlap: bufferOverlapLen: " << bufferOverlapLen << std::endl;
 
         assert(bufferOverlapLen + bufferAheadLen == headerPtr->_len);
 
@@ -116,37 +117,46 @@ class bufferQueue
     }
     bool pop()
     {
-        if (empty())
+        const auto headVal{_head.load(std::memory_order_relaxed)};
+        const auto tailVal{_tail.load(std::memory_order_acquire)};
+
+        if (empty(headVal, tailVal))
         {
             return false;
         }
 
-        const auto* ptr{_buffer + _tail * BlockSize};
+        const auto* ptr{_buffer + tailVal * BlockSize};
         const auto* headerPtr{reinterpret_cast<const header*>(ptr)};
         assert(headerPtr->verifyMagic());
 
         const auto blocksToSkip{numOfBlocks(headerPtr->_len + sizeof(header))};
 
-        auto tailVal{_tail.load()};
-        _tail = (tailVal + blocksToSkip) % _capacityBlocks;
+        _tail.store((tailVal + blocksToSkip) % _capacityBlocks, std::memory_order_release);
 
-#if 0
-        std::cout << "head: " << _head
-                  << ", tail: " << tailVal << " -> " << _tail
-                  << ", blocksToSkip: " << blocksToSkip
-                  << ", blocks: " << _capacityBlocks
-                  << std::endl;
-#endif
         return true;
     }
 
     bool empty() const noexcept
     {
-        return _head == _tail;
+        const auto headVal{_head.load(std::memory_order_relaxed)};
+        const auto tailVal{_tail.load(std::memory_order_acquire)};
+
+        return empty(headVal, tailVal);
+    }
+    static bool empty(size_t headVal, size_t tailVal) noexcept
+    {
+        return headVal == tailVal;
     }
     bool full() const noexcept
     {
-        return (_head + 1) % _capacityBlocks == _tail;
+        const auto headVal{_head.load(std::memory_order_relaxed)};
+        const auto tailVal{_tail.load(std::memory_order_acquire)};
+
+        return full(headVal, tailVal, _capacityBlocks);
+    }
+    static bool full(size_t headVal, size_t tailVal, size_t capacityBlocks) noexcept
+    {
+        return (headVal + 1) % capacityBlocks == tailVal;
     }
 
     private:
@@ -189,7 +199,7 @@ class bufferQueue
         return std::ceil(static_cast<double>(n) / static_cast<double>(BlockSize));
     }
    
-
+    protected:
     std::atomic<size_t> _head;
     std::atomic<size_t> _tail;
     char* _buffer;
@@ -207,8 +217,10 @@ std::ostream& operator<< (std::ostream& stream, const bufferQueue& obj)
 
 using bufferQueueSyncSPSC = bufferQueue;
 
-class bufferQueueSyncMPSC : private bufferQueue
+class bufferQueueSyncMPSC : protected bufferQueue
 {
+    friend std::ostream& operator<< (std::ostream& stream, const bufferQueueSyncMPSC& obj);
+
     public:
     bufferQueueSyncMPSC(size_t capacity): bufferQueue{capacity} {}
 
@@ -229,9 +241,16 @@ class bufferQueueSyncMPSC : private bufferQueue
     private:
     std::mutex _mtx;
 };
-
-class bufferQueueSyncSPMC : private bufferQueue
+std::ostream& operator<< (std::ostream& stream, const bufferQueueSyncMPSC& obj)
 {
+    stream << static_cast<const bufferQueue&>(obj);
+    return stream;
+}
+
+class bufferQueueSyncSPMC : protected bufferQueue
+{
+    friend std::ostream& operator<< (std::ostream& stream, const bufferQueueSyncSPMC& obj);
+
     public:
     bufferQueueSyncSPMC(size_t capacity): bufferQueue{capacity} {}
 
@@ -239,66 +258,53 @@ class bufferQueueSyncSPMC : private bufferQueue
     {
         return bufferQueue::push(ptrIn, len);
     }
-    std::pair<const char*, size_t> front(std::string& buffer)
+    std::pair<const char*, size_t> pop(std::string& buffer)
     {
         std::lock_guard<std::mutex> l{_mtx};
         auto [ptr, len] = bufferQueue::front(buffer);
         if (ptr == nullptr || len == 0)
         {
-            return {ptr, len};
+            return {nullptr, 0};
         }
 
         if (ptr != buffer.c_str())
         {
             buffer.resize(len);
             std::memcpy(buffer.data(), ptr, len);
-            return {buffer.data(), len};
         }
-        return {ptr, len}; 
-    }
-    bool pop()
-    {
-        std::lock_guard<std::mutex> l{_mtx};
-        return bufferQueue::pop();
+        bufferQueue::pop();
+        return {buffer.data(), buffer.size()};
     }
 
     private:
     std::mutex _mtx;
 };
 
-class bufferQueueSyncMPMC : private bufferQueue
+std::ostream& operator<< (std::ostream& stream, const bufferQueueSyncSPMC& obj)
 {
+    stream << static_cast<const bufferQueue&>(obj);
+    return stream;
+}
+
+class bufferQueueSyncMPMC : public bufferQueueSyncSPMC
+{
+    friend std::ostream& operator<< (std::ostream& stream, const bufferQueueSyncMPMC& obj);
+
     public:
-    bufferQueueSyncMPMC(size_t capacity): bufferQueue{capacity} {}
+    bufferQueueSyncMPMC(size_t capacity): bufferQueueSyncSPMC{capacity} {}
 
     bool push(const char* ptrIn, size_t len)
     {
         std::lock_guard<std::mutex> l{_mtx};
         return bufferQueue::push(ptrIn, len);
     }
-    std::pair<const char*, size_t> front(std::string& buffer)
-    {
-        std::lock_guard<std::mutex> l{_mtx};
-        auto [ptr, len] = bufferQueue::front(buffer);
-        if (ptr == nullptr || len == 0)
-        {
-            return {ptr, len};
-        }
-
-        if (ptr != buffer.c_str())
-        {
-            buffer.resize(len);
-            std::memcpy(buffer.data(), ptr, len);
-            return {buffer.data(), len};
-        }
-        return {ptr, len}; 
-    }
-    bool pop()
-    {
-        std::lock_guard<std::mutex> l{_mtx};
-        return bufferQueue::pop();
-    }
 
     private:
     std::mutex _mtx;
 };
+
+std::ostream& operator<< (std::ostream& stream, const bufferQueueSyncMPMC& obj)
+{
+    stream << static_cast<const bufferQueue&>(obj);
+    return stream;
+}

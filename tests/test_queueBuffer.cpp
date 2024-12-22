@@ -10,9 +10,10 @@
 #include <array>
 #include <functional>
 #include <random>
+#include <limits>
 
 constexpr static size_t MaxSeqnos{1024 * 1024};
-std::array<size_t, MaxSeqnos> receivedSeqnos;
+std::array<std::atomic<size_t>, MaxSeqnos> receivedSeqnos;
 void initReceivedSeqnos()
 {
     std::fill(receivedSeqnos.begin(), receivedSeqnos.end(), 0);
@@ -20,20 +21,40 @@ void initReceivedSeqnos()
 void updateReceivedSeqno(size_t seqno)
 {
     const auto index{seqno % receivedSeqnos.size()};
+
     receivedSeqnos[index] += 1;
 }
-bool verifyReceivedSeqnoVal(size_t seqno, size_t expectedVal)
+bool verifyReceivedSeqnoVal(size_t seqno, std::function<bool(size_t)> pred)
 {
     if (seqno > receivedSeqnos.size() - 1)
     {
         throw std::runtime_error{std::string{"verify: seqno "} + std::to_string(seqno) + " is greater then the max " + std::to_string(receivedSeqnos.size())};
     }
-    if (receivedSeqnos[seqno] != expectedVal)
+    if (!pred(receivedSeqnos[seqno]))
     {
-        std::cout << "verify: seqno: " << seqno << " mismatch : received: " << receivedSeqnos[seqno] << " != expected: " << expectedVal << std::endl;
+        std::cout << "verify: seqno: " << seqno << " mismatch : received: " << receivedSeqnos[seqno] << std::endl;
         return false;
     }
     return true;
+}
+void summarize()
+{
+    size_t prevVal{receivedSeqnos[0]};
+    size_t cnt{0};
+    for (size_t i = 0 ; i < receivedSeqnos.size() ; i++)
+    {
+        if (prevVal == receivedSeqnos[i])
+        {
+            cnt += 1;
+        }
+        else
+        {
+            std::cout << cnt << ':' << prevVal << std::endl;
+            prevVal = receivedSeqnos[i];
+            cnt = 1;
+        }
+    }
+    std::cout << cnt << ':' << prevVal << std::endl;
 }
 
 void makeData(size_t seqno, std::string& data)
@@ -137,16 +158,18 @@ bool testInterface()
     return true;
 }
 
-bool testMultiThreadSPSC()
+template<typename QueueType>
+bool testQueueMultiThread(size_t queueSize, size_t numProducers)
 {
-    bufferQueueSyncSPSC queue{1024};
+    QueueType queue{queueSize};
     std::cout << queue << std::endl;
 
     initReceivedSeqnos();
 
     std::atomic<bool> startTest{false};
-    std::atomic<bool> pusherFinished{false};
+    std::atomic<size_t> pusherFinished{0};
     auto pusher{[&startTest, &pusherFinished, &queue](size_t startSeqno, size_t endSeqno){
+        std::cout << "pusher seqnos: [" << startSeqno << ", " << endSeqno << ')' << std::endl;
         while(!startTest){std::this_thread::yield();}
 
         randomAgent randomYield(0.001, [](){std::this_thread::yield();});
@@ -157,7 +180,7 @@ bool testMultiThreadSPSC()
             while (!queue.push(data.c_str(), data.size()));
 
             //std::cout << "pushed: seqno: " << seqno << ", len: " << data.size() << std::endl;
-            if ((seqno) % 1'000'000 == 0)
+            if ((seqno - startSeqno) % 100'000 == 0)
             {
                 std::cout << "pushed up to " << seqno << std::endl;
             }
@@ -165,10 +188,10 @@ bool testMultiThreadSPSC()
         }
 
         std::cout << "pushed finished" << std::endl;
-        pusherFinished = true;
+        pusherFinished += 1;
     }};
     
-    auto puller{[&pusherFinished, &queue](std::chrono::milliseconds timeout){
+    auto puller{[&pusherFinished, numProducers, &queue](std::chrono::milliseconds timeout){
         randomAgent randomYield(0.001, [](){std::this_thread::yield();});
         std::string data, expected;
         const auto endTp{std::chrono::system_clock::now() + timeout};
@@ -177,17 +200,19 @@ bool testMultiThreadSPSC()
             auto [ptr, len] = queue.front(data);
             if (ptr == nullptr)
             {
-                if (pusherFinished)
+                if (pusherFinished == numProducers)
                 {
-                    std::cout << "pusher finished, poller finished too" << std::endl;
+                    std::cout << "all pushers finished, poller finished too" << std::endl;
                     return;
                 }
                 std::this_thread::yield();
                 continue;
             }
+
             for ([[maybe_unused]]auto i : {0, 1})
             {
                 auto [ptr, len] = queue.front(data);
+                //assert(ptr == data.c_str());
 
                 const std::string_view received{ptr, len};
                 size_t receivedSeqno{0};
@@ -216,9 +241,14 @@ bool testMultiThreadSPSC()
 
     std::vector<std::thread> threads;
     threads.emplace_back(puller, std::chrono::milliseconds{1000000000});
-    size_t startSeqno{0};
-    size_t endSeqno{MaxSeqnos};// * 1024 * 10};
-    threads.emplace_back(pusher, startSeqno, endSeqno);
+    
+    const size_t startSeqno{0};
+    const size_t endSeqno{MaxSeqnos * 10};// * 1024 * 10};
+    const size_t batchSize{(endSeqno - startSeqno) / numProducers};
+    for (size_t i = 0 ; i < numProducers ; i++)
+    {
+        threads.emplace_back(pusher, i * batchSize, i * batchSize + batchSize);
+    }
 
     std::this_thread::sleep_for(std::chrono::seconds{1});
     startTest = true;
@@ -228,13 +258,127 @@ bool testMultiThreadSPSC()
         t.join();
     }
 
-    const auto expectedVal{static_cast<size_t>(endSeqno / MaxSeqnos) * 2};
-    for(auto seqno = startSeqno ; seqno < MaxSeqnos; seqno++)
+    const auto expectedVal{static_cast<size_t>(std::ceil((endSeqno - startSeqno) / MaxSeqnos)) * 2};
+    auto predicate{[expectedVal](size_t val){return expectedVal == val;}};
+    for(size_t seqno = 0 ; seqno < numProducers * batchSize; seqno++)
     {
-        if (!verifyReceivedSeqnoVal(seqno, expectedVal))
+        if (!verifyReceivedSeqnoVal(seqno % MaxSeqnos, predicate))
         {
            std::cout << __FILE__ << ':' << __LINE__
-                     << " - Error: data mismatch: seqno: " << seqno << " was not received properly" << std::endl;
+                     << " - Error: data mismatch: seqno: " << seqno << " was not received properly, expected: " << expectedVal << std::endl;
+        }
+    }
+
+    return true;
+}
+
+template<typename QueueType>
+bool testQueueMultiConsumersThread(size_t queueSize, size_t numProducers, size_t numConsumers)
+{
+    QueueType queue{queueSize};
+    std::cout << queue << std::endl;
+
+    initReceivedSeqnos();
+
+    std::atomic<bool> startTest{false};
+    std::atomic<size_t> pusherFinished{0};
+    auto pusher{[&startTest, &pusherFinished, &queue](size_t startSeqno, size_t endSeqno){
+        std::cout << "pusher seqnos: [" << startSeqno << ", " << endSeqno << ')' << std::endl;
+        while(!startTest){std::this_thread::yield();}
+
+        randomAgent randomYield(0.001, [](){std::this_thread::yield();});
+        std::string data;
+        for(auto seqno = startSeqno ; seqno < endSeqno; seqno++)
+        { 
+            makeData(seqno, data);
+            while (!queue.push(data.c_str(), data.size()));
+
+            //std::cout << "pushed: seqno: " << seqno << ", len: " << data.size() << std::endl;
+            if ((seqno - startSeqno) % 1'000'000 == 0)
+            {
+                std::cout << "pushed up to " << seqno << std::endl;
+            }
+            randomYield.randomlyAct();
+        }
+
+        std::cout << "pushed finished" << std::endl;
+        pusherFinished += 1;
+    }};
+    
+    auto puller{[&pusherFinished, numProducers, &queue](std::chrono::milliseconds timeout){
+        randomAgent randomYield(0.001, [](){std::this_thread::yield();});
+        std::string data, expected;
+        const auto endTp{std::chrono::system_clock::now() + timeout};
+        while (endTp > std::chrono::system_clock::now())
+        {
+            auto [ptr, len] = queue.pop(data);
+            if (ptr == nullptr)
+            {
+                if (pusherFinished == numProducers)
+                {
+                    std::cout << "all pushers finished, poller finished too" << std::endl;
+                    return;
+                }
+                std::this_thread::yield();
+                continue;
+            }
+            assert(ptr == data.c_str());
+
+            const std::string_view received{ptr, len};
+            size_t receivedSeqno{0};
+            sscanf(ptr, "%zu", &receivedSeqno);
+            makeData(receivedSeqno, expected);
+            if (expected != received)
+            {
+                std::cout << __FILE__ << ':' << __LINE__ 
+                          << " - Error: data mismatch: received seqno: " << receivedSeqno << std::endl
+                          << "expected: " << expected << std::endl
+                          << "received: " << received << std::endl;
+                std::terminate();
+            }
+            updateReceivedSeqno(receivedSeqno);
+
+            if ((receivedSeqno) % 1'000'000 == 0)
+            {
+                std::cout << "pulled up to " << receivedSeqno << std::endl;
+            }
+
+            randomYield.randomlyAct();
+        }
+    }};
+
+    std::vector<std::thread> threads;
+    for (size_t i = 0 ; i < numConsumers ; i++)
+    {
+        threads.emplace_back(puller, std::chrono::milliseconds{1000000000});
+    }
+    
+    const size_t startSeqno{0};
+    const size_t endSeqno{MaxSeqnos * 10};
+    const size_t batchSize{(endSeqno - startSeqno) / numProducers};
+    for (size_t i = 0 ; i < numProducers ; i++)
+    {
+        threads.emplace_back(pusher, i * batchSize, i * batchSize + batchSize);
+    }
+
+    std::this_thread::sleep_for(std::chrono::seconds{1});
+    startTest = true;
+
+    for(auto& t : threads)
+    {
+        t.join();
+    }
+
+    summarize();
+
+    const auto expectedVal{static_cast<size_t>(std::ceil((endSeqno - startSeqno) / MaxSeqnos))};
+    auto predicate{[expectedVal](size_t val){return expectedVal == val;}};
+    for(size_t seqno = startSeqno ; seqno < numProducers * batchSize; seqno++)
+    {
+        if (!verifyReceivedSeqnoVal(seqno % MaxSeqnos, predicate))
+        {
+           std::cout << __FILE__ << ':' << __LINE__
+                     << " - Error: data mismatch: seqno: " << seqno << " was not received properly, expected: " << expectedVal << std::endl;
         }
     }
 
@@ -247,7 +391,13 @@ int main(int /*argc*/, char* /*argv*/[])
 		return __LINE__;
     if (!testRandomAgent())
         return __LINE__;
-    if (!testMultiThreadSPSC())
+    if (!testQueueMultiThread<bufferQueueSyncSPSC>(1024, 1))
+		return __LINE__;
+    if (!testQueueMultiThread<bufferQueueSyncMPSC>(1024, 5))
+		return __LINE__;
+    if (!testQueueMultiConsumersThread<bufferQueueSyncSPMC>(1024, 1, 5))
+		return __LINE__;
+    if (!testQueueMultiConsumersThread<bufferQueueSyncMPMC>(1024, 5, 5))
 		return __LINE__;
 	return 0;
 }
