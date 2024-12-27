@@ -83,13 +83,20 @@ class randomAgent
             _action();
         }
     }
-
     void randomlyAct()
     {
         randomlyAct(_probability);
     }
+    bool randomTest(double probability)
+    {
+        return probability > _dist(_mt);
+    }
+    bool randomTest()
+    {
+        return randomTest(_probability);
+    }
 
-    double _probability;
+    double _probability{0.0};
     std::function<void()> _action;
     std::mt19937 _mt{(std::random_device())()};
     std::uniform_real_distribution<double> _dist{0.0, 1.0};
@@ -108,8 +115,25 @@ bool testRandomAgent()
             ra.randomlyAct();
         }
 
-        std::cout << "test with probability: " << probability << " : " << cnt << ':' << max << " -> " << static_cast<double>(cnt) / static_cast<double>(max) << std::endl;
+        std::cout << "test with probability(randomlyAct): " << probability << " : " << cnt << ':' << max << " -> " << static_cast<double>(cnt) / static_cast<double>(max) << std::endl;
     }
+
+    for (double probability{0.0} ; probability <= 1.0 ; probability += 0.1)
+    {
+        const size_t max{10000};
+        size_t cnt{0};
+        randomAgent ra{probability, [&cnt](){cnt++;}};
+        for (size_t i = 0 ; i < max ; i++)
+        {
+            if(ra.randomTest())
+            {
+                cnt++;
+            }
+        }
+
+        std::cout << "test with probability(randomTest): " << probability << " : " << cnt << ':' << max << " -> " << static_cast<double>(cnt) / static_cast<double>(max) << std::endl;
+    }
+
     return true;
 }
 
