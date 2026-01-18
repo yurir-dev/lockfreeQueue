@@ -24,7 +24,13 @@ add_executable(${TEST_ATOMICS} test_atomics.cpp ${COMMON_SOURCES})
 set(TEST_QUEUEBUFFER test_queueBuffer)
 add_executable(${TEST_QUEUEBUFFER} test_queueBuffer.cpp ${COMMON_SOURCES})
 
-set(exes ${TEST_INTERFACE} ${TEST_MANY2ONE} ${TEST_MANY2MANY} ${TEST_ATOMICS} ${TEST_QUEUEBUFFER})
+set(TEST_BUILTINS test_builtins)
+add_executable(${TEST_BUILTINS} test_builtins.cpp ${COMMON_SOURCES})
+
+set(TEST_SPSC2 test_spsc2)
+add_executable(${TEST_SPSC2} test_SPSC2.cpp ${COMMON_SOURCES})
+
+set(exes ${TEST_SPSC2} ${TEST_INTERFACE} ${TEST_MANY2ONE} ${TEST_MANY2MANY} ${TEST_ATOMICS} ${TEST_QUEUEBUFFER} ${TEST_BUILTINS})
 
 if (UNIX)
 message("creating linux project")

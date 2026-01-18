@@ -9,7 +9,7 @@ project(${PROJECT_NAME})
 if(MSVC)
     add_compile_options("/W4" "/WX" "$<$<CONFIG:RELEASE>:/O2>")
 else()
-    add_compile_options("-Wall" "-Wextra" "-Werror" "-g" "-O2" "$<$<CONFIG:RELEASE>:-O3>")
+    add_compile_options("-Wall" "-Wextra" "-Werror" "-g" "$<$<CONFIG:RELEASE>:-O3>")
     if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
         add_compile_options("-stdlib=libc++")
     else()
@@ -20,7 +20,7 @@ endif()
 add_compile_options("-std=c++17")
 add_compile_options("-std=gnu++17")
 
-set (SOURCES main.cpp lockfreeQueue.h)
+set (SOURCES main.cpp lockfreeQueue.h lockfreeQueue2.h)
 
 # specify the C++ standard
 set(CMAKE_CXX_STANDARD 17)
