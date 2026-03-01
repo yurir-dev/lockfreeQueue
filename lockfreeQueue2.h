@@ -4,6 +4,8 @@
 #include <memory>
 #include <atomic>
 #include <immintrin.h> // For _mm_pause on x86
+#include <type_traits>
+#include <utility>
 
 namespace concurency_2026{
 
@@ -15,9 +17,61 @@ struct alignas(64) SharedCnt
 template<typename T, size_t N>
 class QueueSPSC
 {
+    static_assert((N > 0) && ((N & (N - 1)) == 0), "N must be a power of 2");
+
     public:   
     QueueSPSC() = default;
     ~QueueSPSC() = default;
+
+    bool empty() const
+    {
+        const auto head{_head.load(std::memory_order_relaxed)};
+        const auto tail{_tail.load(std::memory_order_acquire)};
+        return head == tail;
+    }
+
+    template <typename U, typename = std::enable_if_t<std::is_assignable_v<T&, U&&>>>
+    void push(U&& elem_)
+    {
+        const auto head{_head.load(std::memory_order_relaxed)};
+
+        while (head - _tail.load(std::memory_order_acquire) == N)
+        {
+            // full
+            _mm_pause();
+        }
+
+        _arr[head & (N - 1)] = std::forward<U>(elem_);
+
+        _head.store(head + 1, std::memory_order_release);
+    }
+
+    void pop(T& elem_)
+    {
+        const auto tail{_tail.load(std::memory_order_relaxed)};
+        while (tail == _head.load(std::memory_order_acquire))
+        {
+            // empty
+            _mm_pause();
+        }
+        
+        elem_ = std::move(_arr[tail & (N - 1)]);
+        _tail.store(tail + 1, std::memory_order_release);
+    }
+
+    private:
+    alignas(64) std::atomic<size_t> _head{0};
+    alignas(64) std::atomic<size_t> _tail{0};
+    alignas(64) std::array<T, N> _arr;
+};
+
+#if 0
+template<typename T, size_t N>
+class QueueMPSC
+{
+    public:   
+    QueueMPSC() = default;
+    ~QueueMPSC() = default;
 
     bool empty() const
     {
@@ -59,5 +113,5 @@ class QueueSPSC
     SharedCnt _tail{0};
     std::array<T, N> _arr;
 };
-
+#endif
 }

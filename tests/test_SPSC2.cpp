@@ -26,11 +26,52 @@ std::ostream& operator<<(std::ostream& os_, const Node& elem_)
     return os_;
 }
 
+struct NodeNoMove
+{
+    NodeNoMove() = default;
+    NodeNoMove(size_t id_) : _id{id_} {}
+    size_t _id{0};
+
+    // deleted move semantics
+    NodeNoMove(NodeNoMove&&) = delete;
+    NodeNoMove& operator=(NodeNoMove&&) = delete;
+
+    bool operator==(const NodeNoMove& other_) const
+    {
+        return _id == other_._id;
+    }
+    bool operator!=(const NodeNoMove& other_) const
+    {
+        return !operator==(other_);
+    }
+};
+std::ostream& operator<<(std::ostream& os_, const NodeNoMove& elem_)
+{
+    os_ << elem_._id;
+    return os_;
+}
+
+bool testSPSC2_nomoveSemantics()
+{
+    // check compilation passes
+    [[maybe_unused]] volatile  concurency_2026::QueueSPSC<NodeNoMove, 2> q;
+    return true;
+}
+
+bool testSPSC2_pushWrongElement()
+{
+    // check compilation passes
+    [[maybe_unused]] concurency_2026::QueueSPSC<Node, 2> q;
+    //q.push(NodeNoMove{}); // compilation error
+    return true;
+}
+
+
 bool testSPSC2()
 {
     std::atomic<bool> res{true};
     concurency_2026::QueueSPSC<Node, 2> q;
-    size_t numEvents{1024 * 1024};
+    size_t numEvents{1024 * 1024 * 10};
 
     std::atomic<bool> sync{false};
 
@@ -48,8 +89,7 @@ bool testSPSC2()
         }
         for (size_t i = 0 ; i < numEvents; ++i)
         {
-            Node elem{i};
-            q.push(elem);
+            q.push(Node{i});
         }
     };
     auto puller = [&res, &sync, &q, numEvents](){
